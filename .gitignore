@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.DS_Store
+
+# Training outputs: generated sequences, TensorBoard logs, code snapshots
+results/
+
+# Source sequence pools (~26 MB). Only the training splits derived from them
+# (data/train.pos, data/train.neg) are tracked; see README for how they are made.
+data/5utr_positives
+data/5utr_negatives
+data/shuffled_5utr_positives
+data/shuffled_5utr_negatives
+
+# Chinese code walkthrough of the original 2022 implementation; it predates the
+# training-loop fixes and is kept locally rather than published while stale.
+walkthrough.md
