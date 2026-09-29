@@ -10,6 +10,7 @@ import numpy as np
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from dataset import GenDataset, DisDataset, PAD_INDEX
@@ -37,6 +38,10 @@ parser.add_argument('--total_batch', type=int, default=500, help='Adversarial tr
 parser.add_argument('--d_steps', type=int, default=5, help='Discriminator updates per generator update')
 parser.add_argument('--d_pretrain_steps', type=int, default=30, help='Discriminator minibatches per pretraining epoch')
 parser.add_argument('--sample_every', type=int, default=25, help='Write generated sequences every N steps')
+parser.add_argument('--objective', choices=['nll', 'bce_gumbel'], default='nll',
+                    help="Generator pretraining objective. 'nll' is the likelihood; "
+                         "'bce_gumbel' reproduces the original BCE-on-a-Gumbel-sample "
+                         "objective for ablation.")
 opt = parser.parse_args()
 
 if not os.path.exists(opt.out_dir):
@@ -122,7 +127,16 @@ def train_generator(generator, dataloader, criterion, optimizer):
         Y = Y.to(device)
 
         logp = generator(X)
-        loss = criterion(logp.reshape(-1, VOCAB_SIZE), Y.reshape(-1))
+
+        if opt.objective == 'nll':
+            loss = criterion(logp.reshape(-1, VOCAB_SIZE), Y.reshape(-1))
+        else:
+            # Original objective: binary cross-entropy against a *sampled* Gumbel-Softmax
+            # relaxation rather than the log-probabilities. Kept as an ablation.
+            pred = F.gumbel_softmax(logp, tau=generator.tau)
+            onehot = F.one_hot(Y.clamp(min=0), VOCAB_SIZE).float()
+            onehot[Y == PAD_INDEX] = 0.
+            loss = criterion(pred, onehot)
 
         total_loss += loss.item()
 
@@ -192,17 +206,18 @@ def main():
 
     # Construct dataloader for Generator
     pos_real_dataset = GenDataset(pos_real_data)
-    pos_real_dataloader = DataLoader(pos_real_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=2, pin_memory=True)
+    pos_real_dataloader = DataLoader(pos_real_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0, pin_memory=True)
 
     # Construct dataloader for Classifier
     dis_data = [pos_real_data, neg_real_data]
     dis_dataset = DisDataset(dis_data)
-    dis_dataloader = DataLoader(dis_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=2, pin_memory=True)
+    dis_dataloader = DataLoader(dis_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0, pin_memory=True)
 
     # Pretrain Generator using MLE
     # NLLLoss on the log-probabilities is the actual likelihood objective; the
     # padding positions flagged by GenDataset are skipped.
-    gen_criterion = nn.NLLLoss(ignore_index=PAD_INDEX)
+    gen_criterion = (nn.NLLLoss(ignore_index=PAD_INDEX) if opt.objective == 'nll'
+                     else nn.BCELoss())
     gen_optimizer = optim.Adam(generator.parameters(), lr=1e-4)
 
     print('\nPretrain Generator with MLE ...')

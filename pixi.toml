@@ -1,0 +1,22 @@
+[workspace]
+name = "5utr-gan"
+version = "0.1.0"
+description = "GAN for synthetic human 5' UTR sequences"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[dependencies]
+python = "3.11.*"
+
+# CUDA 12.1 wheels: the GPU nodes run driver 525.60.13, which supports CUDA 12.x
+# but not 13.x. torch 2.5.1 also still ships sm_70 kernels, which the V100 needs.
+[pypi-dependencies]
+torch = { version = "==2.5.1", index = "https://download.pytorch.org/whl/cu121" }
+numpy = "*"
+tqdm = "*"
+tensorboard = "*"
+
+[tasks]
+train = "python train.py"
+evaluate = "python evaluate.py"
+entropy = "python sequence_entropy.py"
